@@ -6,7 +6,7 @@ import queue as Queue
 import copy
 import locks
 import globalvars
-
+import collections
 
 
 class chef_thread(threading.Thread):
@@ -22,7 +22,9 @@ class chef_thread(threading.Thread):
         self.menu = menu
         self.food_queue = queues
         self.food_count = 0
-
+        self.item_count = collections.OrderedDict()
+        for item in menu:
+            self.item_count[item] = 0
 
     def run(self):
         while True:
@@ -30,18 +32,23 @@ class chef_thread(threading.Thread):
 
 
             # locks.food_ready.clear()
-            locks.bell.wait(timeout=0.5)
+            if locks.bell.wait(timeout=0.5):
+                with self._statlock:
+                    self.food_count += 2
+                globalvars.message_q.put("bell rung")
+                self.make_food()
+                # locks.food_ready.set()
+                locks.next_round.wait(0.5)
+            else:
+                # with self._statlock:
+                    # self.food_count -= 2
+
+                globalvars.message_q.put("bell timed out")
 
             if self._done.is_set():
                 break
 
-            self.make_food()
 
-            locks.food_ready.set()
-            with self._statlock:
-                self.food_count += 2
-            # print("{}".format(self.food_count))
-            # self.food_queue.join()
             locks.bell.clear()
             locks.next_round.clear()
 
@@ -72,9 +79,11 @@ class chef_thread(threading.Thread):
             elif food == "SODA":
                 send_out = soda()
 
+            self.item_count[food] += 1
             self.food_queue.put(send_out, block=False)
             msg = "Sending out {}..".format(send_out)
             globalvars.message_q.put(msg)
+        globalvars.message_q.put("{}".format(self.food_count))
 
 
 
@@ -112,76 +121,10 @@ class customer_thread(threading.Thread):
             # locks.next_round.wait()
             time.sleep(0.5)
             if self._done:
-                msg = "Done"
+                msg = "{} done".format(self.name)
                 globalvars.message_q.put(msg)
                 break
 
-    # def run(self):
-        # items = []
-        # while True:
-            # self.state = "HUNGRY"
-            # globalvars.thread_state.put("SYN")
-            # locks.next_round.wait()
-            # if self._done:
-                # msg = "Done"
-                # globalvars.message_q.put(msg)
-                # break
-
-            # msg = "{} is waiting".format(self.name)
-            # globalvars.message_q.put(msg)
-
-            # locks.b.wait()
-
-            # if self.eat():
-                # del items[:]
-                # items = []
-
-            # locks.next_round.clear()
-            # locks.threads_ready.clear()
-            # locks.food_ready.wait()
-
-            # with locks.lock:
-                # msg = "{} has lock {}".format(self.name, locks.lock.locked())
-                # globalvars.message_q.put(msg)
-                # try:
-                    # if self.food_queue.empty():
-                        # msg = "{} sees no food".format(self.name)
-                        # globalvars.message_q.put(msg)
-                        # self.state = "DONE"
-                    # while not self.food_queue.empty():
-                        # next_item = self.food_queue.get()
-                        # items.append(copy.deepcopy(next_item))
-                # except Exception as e:
-                    # print("{}".format(e))
-                # else:
-                    # if self.state == "HUNGRY":
-                        # msg = "{} has new items {}".format(self.name, items)
-                        # globalvars.message_q.put(msg)
-
-                        # for item in items:
-                            # if self.wants(item):
-                                # msg = "{} took {}".format(self.name, item)
-                                # globalvars.message_q.put(msg)
-
-                                # self.take_item(item)
-
-                                # msg = "{} is {}".format(self.name, self.state)
-                                # globalvars.message_q.put(msg)
-
-                                # try:
-                                    # self.food_queue.task_done()
-                                # except:
-                                    # pass
-                            # else:
-                                # msg = "{} put back {} has {}".format(self.name, item,
-                                                                     # self.plate)
-                                # globalvars.message_q.put(msg)
-                                # self.food_queue.put(copy.deepcopy(item))
-
-                                # try:
-                                    # self.food_queue.task_done()
-                                # except:
-                                    # pass
 
 
     def process_item(self, item):
@@ -197,7 +140,7 @@ class customer_thread(threading.Thread):
     def take_item(self, item):
         cpy = copy.deepcopy(item)
         self.plate.append(cpy)
-        globalvars.message_q.put("{} took {}".format(self.name, self.plate))
+        globalvars.message_q.put("{} took {} has {}".format(self.name, item, self.plate))
 
 
 
@@ -226,8 +169,8 @@ class customer_thread(threading.Thread):
 
 
     def set_done(self):
-        # with self.inlock:
-        self._done = True
+        with self.inlock:
+            self._done = True
 
     def go_home(self):
         self.set_done()

@@ -41,10 +41,19 @@ if __name__ == "__main__":
 
     try:
         chef.start()
+        print("Chef {} opened restaurant".format(chef.name))
         for customer in customers:
             customer.start()
+            print("Customer {} arrived".format(customer.name))
 
-        while chef.food_count < 198:
+        print("\n")
+
+        while chef.food_count < 200:
+            locks.bell.set()
+            sys.stdout.write("{} meals served\r".format(chef.food_count))
+            sys.stdout.flush()
+            # if chef.food_count == 196:
+                # break
             while not food_queue.empty():
                 item = food_queue.get()
                 for customer in customers:
@@ -53,9 +62,7 @@ if __name__ == "__main__":
                             food_queue.task_done()
                             break
 
-            sys.stdout.write("{} meals served\r".format(chef.food_count))
-            sys.stdout.flush()
-            locks.bell.set()
+            locks.next_round.set()
 
 
 
@@ -66,13 +73,10 @@ if __name__ == "__main__":
         print("Error: {}".format(e))
         chef.close_shop()
     finally:
-        sys.stdout.write("                             \r".format(chef.food_count))
-        sys.stdout.flush()
+        print("\n")
         chef.close_shop()
         for customer in customers:
             customer.set_done()
-        # locks.threads_ready.set()
-        locks.bell.set()
         for customer in customers:
             customer.join()
             print("{} has left".format(customer.name))
@@ -86,6 +90,9 @@ if __name__ == "__main__":
             globalvars.message_q.put("{} ate {} times".format(customer.name, customer.times_ate))
         globalvars.message_q.put("Chef {} made {} dishes".format(chef.name, chef.food_count))
         print("\nChef {} made {} dishes".format(chef.name, chef.food_count))
+        for item, count in chef.item_count.items():
+            print("{}: {}".format(item, count))
+            globalvars.message_q.put("{}: {}".format(item, count))
         msgs.stop()
         msgs.join()
         sys.exit(0)
